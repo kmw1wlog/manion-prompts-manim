@@ -1,0 +1,141 @@
+from manim import *
+
+LEFT_RATIO = 0.55
+RIGHT_RATIO = 0.45
+MARGIN = 0.06
+GAP = 0.04
+DEBUG = False
+
+class LayoutGuard:
+    @staticmethod
+    def ensure_no_overlap(scene, items, bounds_rect, min_scale=0.7, step_shift=0.15):
+        for m in items:
+            bbox = m.get_bounding_box()
+            rbb = bounds_rect.get_bounding_box()
+            dx, dy = 0, 0
+            if bbox[0][0] < rbb[0][0]:
+                dx = rbb[0][0] - bbox[0][0] + 0.02
+            if bbox[2][0] > rbb[2][0]:
+                dx = rbb[2][0] - bbox[2][0] - 0.02
+            if bbox[0][1] < rbb[0][1]:
+                dy = rbb[0][1] - bbox[0][1] + 0.02
+            if bbox[2][1] > rbb[2][1]:
+                dy = rbb[2][1] - bbox[2][1] - 0.02
+            if dx or dy:
+                m.shift(np.array([dx, dy, 0]))
+        def overlap(a, b):
+            Ab, Bb = a.get_bounding_box(), b.get_bounding_box()
+            return not (Ab[2][0] < Bb[0][0] or Bb[2][0] < Ab[0][0] or Ab[2][1] < Bb[0][1] or Bb[2][1] < Ab[0][1])
+        for i in range(len(items)):
+            for j in range(i+1, len(items)):
+                a, b = items[i], items[j]
+                tries = 0
+                while overlap(a, b) and tries < 6:
+                    for m in (a, b):
+                        if m.width > bounds_rect.width * 0.9 and m.get_scale() > min_scale:
+                            m.scale(0.9)
+                    b.shift(RIGHT*step_shift + DOWN*step_shift)
+                    tries += 1
+
+class RollingBoard(VGroup):
+    def __init__(self, width, max_lines=3, line_gap=0.15, **kwargs):
+        super().__init__(**kwargs)
+        self.width = width
+        self.max_lines = max_lines
+        self.line_gap = line_gap
+        self.lines = []
+    def add_line(self, scene, mobj):
+        mobj.scale_to_fit_width(self.width)
+        if self.lines:
+            lowest = self.lines[-1]
+            mobj.next_to(lowest, DOWN, buff=self.line_gap).align_to(lowest, LEFT)
+        else:
+            mobj.to_edge(DOWN, buff=0.5).to_edge(RIGHT, buff=0.5)
+        self.lines.append(mobj)
+        scene.add(mobj)
+        if len(self.lines) > self.max_lines:
+            top = self.lines.pop(0)
+            scene.play(FadeOut(top, shift=UP*0.2), run_time=0.3)
+            for k, line in enumerate(self.lines):
+                if k == 0:
+                    continue
+                line.next_to(self.lines[k-1], UP, buff=self.line_gap).align_to(self.lines[k-1], LEFT)
+
+def reserve_panels(scene):
+    frame = scene.camera.frame
+    W, H = frame.get_width(), frame.get_height()
+    inner_w = W*(1 - 2*MARGIN - GAP)
+    left_w = inner_w * LEFT_RATIO
+    right_w = inner_w * RIGHT_RATIO
+    left_box = Rectangle(width=left_w, height=H*(1-2*MARGIN)).move_to(LEFT*(GAP/2*W) + LEFT*(right_w/2)).shift(RIGHT*(W*MARGIN))
+    right_box = Rectangle(width=right_w, height=H*(1-2*MARGIN)).to_edge(RIGHT, buff=W*MARGIN)
+    if DEBUG:
+        for r, color in [(left_box, YELLOW), (right_box, BLUE)]:
+            r.set_stroke(color, 1).set_fill(opacity=0)
+            scene.add(r.copy())
+    return left_box, right_box
+
+class LinearEquationScene(Scene):
+    def construct(self):
+        left_box, right_box = reserve_panels(self)
+        board = RollingBoard(width=right_box.width*0.95, max_lines=3)
+
+        number_line = NumberLine(x_range=[-3,3,1], length=left_box.width*0.9)
+        number_line.move_to(left_box.get_center())
+        LayoutGuard.ensure_no_overlap(self, [number_line], left_box)
+        self.play(Create(number_line))
+
+        # SEC_PROBLEM
+        eq1 = MathTex(r"p(x+4)-6(q-2)+2=0")
+        eq2 = MathTex(r"2(x-3)=3(2x-1)+1")
+        for eq in [eq1, eq2]:
+            eq.move_to(right_box.get_left()+RIGHT*0.2)
+            LayoutGuard.ensure_no_overlap(self, [eq], right_box)
+            self.play(Write(eq))
+            board.add_line(self, eq)
+
+        # SEC_GIVENS
+        relation = MathTex(r"x_1=\tfrac{1}{2}x_2")
+        relation.move_to(right_box.get_left()+RIGHT*0.2)
+        LayoutGuard.ensure_no_overlap(self, [relation], right_box)
+        self.play(Write(relation))
+        board.add_line(self, relation)
+
+        # SEC_WORK
+        sol2 = MathTex(r"x_2=-1")
+        sol2.move_to(right_box.get_left()+RIGHT*0.2)
+        LayoutGuard.ensure_no_overlap(self, [sol2], right_box)
+        self.play(Write(sol2))
+        board.add_line(self, sol2)
+        dot2 = Dot(number_line.n2p(-1), color=BLUE)
+        LayoutGuard.ensure_no_overlap(self, [dot2], left_box)
+        self.play(FadeIn(dot2))
+
+        sol1 = MathTex(r"x_1=-\tfrac{1}{2}")
+        sol1.move_to(right_box.get_left()+RIGHT*0.2)
+        LayoutGuard.ensure_no_overlap(self, [sol1], right_box)
+        self.play(Write(sol1))
+        board.add_line(self, sol1)
+        dot1 = Dot(number_line.n2p(-0.5), color=YELLOW)
+        LayoutGuard.ensure_no_overlap(self, [dot1], left_box)
+        self.play(FadeIn(dot1))
+
+        pq_equation = MathTex(r"7p=12q-28")
+        pq_equation.move_to(right_box.get_left()+RIGHT*0.2)
+        LayoutGuard.ensure_no_overlap(self, [pq_equation], right_box)
+        self.play(Write(pq_equation))
+        board.add_line(self, pq_equation)
+
+        p_val = MathTex(r"p=8,\ q=7")
+        p_val.move_to(right_box.get_left()+RIGHT*0.2)
+        LayoutGuard.ensure_no_overlap(self, [p_val], right_box)
+        self.play(Write(p_val))
+        board.add_line(self, p_val)
+
+        # SEC_RESULT
+        result = MathTex(r"9p-3q=51").scale(1.4)
+        result.move_to(right_box.get_center())
+        LayoutGuard.ensure_no_overlap(self, [result], right_box)
+        self.play(Write(result))
+        self.play(result.animate.set_color(YELLOW))
+        self.wait(2)
